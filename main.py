@@ -31,9 +31,10 @@ CHANNEL_LINK = "https://t.me/Riiin69"
 
 BLACK_LIST = {994608867}
 
-video_database = []
-video_unique_ids = set()
-video_fingerprints = set()  # بصمات المقاطع (الحجم + المدة) لمنع التنزيل والإعادة
+video_database = []         # التخزين الرئيسي لمقاطع الفيديو
+video_durations = set()      # مدة الفيديوهات بالثواني
+admin_upload_mode = False   # وضع التعبئة للأدمن
+admin_added_count = 0        # عداد المقاطع المضافة في الجلسة
 
 # دالة لحذف الرسالة في الخلفية بعد 30 ثانية دون تعطيل البوت
 async def delete_message_after_delay(message, delay: int = 30):
@@ -107,7 +108,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("❌ ما زلت غير مشترك في القناة!", show_alert=True)
 
-# --- 3. معالجة الإدارة: الحذف والحظر ---
+# --- 3. معالجة الإدارة: الحذف والحظر وإضافة المقاطع ---
 
 async def execute_delete(update: Update):
     reply_msg = update.message.reply_to_message
@@ -116,18 +117,14 @@ async def execute_delete(update: Update):
         return
 
     file_id = reply_msg.video.file_id
-    file_unique_id = reply_msg.video.file_unique_id
-    fingerprint = f"{reply_msg.video.duration}_{reply_msg.video.file_size}"
+    duration = reply_msg.video.duration
 
     removed = False
     if file_id in video_database:
         video_database.remove(file_id)
         removed = True
-    if file_unique_id in video_unique_ids:
-        video_unique_ids.remove(file_unique_id)
-        removed = True
-    if fingerprint in video_fingerprints:
-        video_fingerprints.remove(fingerprint)
+    if duration in video_durations:
+        video_durations.remove(duration)
         removed = True
 
     if removed:
@@ -155,14 +152,11 @@ async def execute_ban(update: Update):
         
         if reply_msg.video:
             file_id = reply_msg.video.file_id
-            file_unique_id = reply_msg.video.file_unique_id
-            fingerprint = f"{reply_msg.video.duration}_{reply_msg.video.file_size}"
+            duration = reply_msg.video.duration
             if file_id in video_database:
                 video_database.remove(file_id)
-            if file_unique_id in video_unique_ids:
-                video_unique_ids.remove(file_unique_id)
-            if fingerprint in video_fingerprints:
-                video_fingerprints.remove(fingerprint)
+            if duration in video_durations:
+                video_durations.remove(duration)
 
         await update.message.reply_text(f"🚫 **تم حظر المستخدم `{target_user_id}` وحذف مقطعه بنجاح!**", parse_mode="Markdown")
     else:
@@ -170,21 +164,53 @@ async def execute_ban(update: Update):
 
 # معالجة أوامر الأدمن
 async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global admin_upload_mode, admin_added_count
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
         return
 
     text = update.message.text.strip().lower() if update.message.text else ""
 
-    if text in ["/del", "/delete", "حذف", "مسح"]:
+    if text in ["/add", "إضافة", "اضافة", "تعبئة"]:
+        admin_upload_mode = True
+        admin_added_count = 0
+        await update.message.reply_text(
+            "📥 **تم تفعيل وضع تعبئة المقاطع!**\n\n"
+            "قم بإرسال المقاطع الآن (فردية أو كـ ألبوم مجتمع).\n"
+            "عند الانتهاء، أرسل الأمر `/done` أو كلمة **تم** للإنهاء.",
+            parse_mode="Markdown"
+        )
+    elif text in ["/done", "تم", "إنهاء", "انهاء"] and admin_upload_mode:
+        admin_upload_mode = False
+        await update.message.reply_text(
+            f"✅ **تم إغلاق وضع التعبئة!**\n"
+            f"📊 المضافة خلال الجلسة: `{admin_added_count}` مقطع.\n"
+            f"📦 إجمالي المقاطع في البوت: `{len(video_database)}` مقطع.",
+            parse_mode="Markdown"
+        )
+    elif text in ["/del", "/delete", "حذف", "مسح"]:
         await execute_delete(update)
     elif text in ["/ban", "حظر", "احظره"]:
         await execute_ban(update)
 
 # معالجة الفيديوهات
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global admin_added_count
     user = update.effective_user
     
+    # 1. حالة تعبئة الأدمن
+    if user.id == ADMIN_ID and admin_upload_mode:
+        video = update.message.video
+        file_id = video.file_id
+        duration = video.duration or 0
+
+        video_database.append(file_id)
+        if duration > 0:
+            video_durations.add(duration)
+        admin_added_count += 1
+        return
+
+    # 2. فحوصات المستخدم العادي
     if user.id in BLACK_LIST:
         await update.message.reply_text("🚫 **عذراً، تم حظرك من استخدام هذا البوت.**")
         return
@@ -199,17 +225,12 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     video = update.message.video
     file_id = video.file_id
-    file_unique_id = video.file_unique_id
-    
-    # إنشاء بصمة خاصة بالمقطع (المدة بالثواني + حجم الملف بالبايت)
     duration = video.duration or 0
-    file_size = video.file_size or 0
-    fingerprint = f"{duration}_{file_size}"
 
-    # كشف ومنع المقاطع المكررة سواء بالمعرف أو ببصمة المقطع وحجمه
-    if file_unique_id in video_unique_ids or fingerprint in video_fingerprints:
+    # منع التكرار بناءً على مدة الفيديو الدقيقة
+    if duration > 0 and duration in video_durations:
         await update.message.reply_text(
-            "⚠️ **هذا المقطع موجود بالفعل في قاعدة البيانات أو تم استلامه من البوت سابقاً!**\nالرجاء إرسال مقطع جديد غير مكرر.",
+            "⚠️ **هذا المقطع مستخدم سابقاً أو تم استلامه من البوت!**\nالرجاء إرسال مقطع جديد من إعدادك.",
             reply_markup=get_main_keyboard()
         )
         return
@@ -241,26 +262,21 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
         
-        # حفظ بيانات مقطع المستخدم
+        # حفظ فيديو المستخدم ومدة الفيديو في السجلات
         video_database.append(file_id)
-        video_unique_ids.add(file_unique_id)
-        if duration > 0 and file_size > 0:
-            video_fingerprints.add(fingerprint)
+        if duration > 0:
+            video_durations.add(duration)
 
-        # تسجيل بصمة المقطع المُرْسَل لمنع أي شخص من تنزيله وإعادة إرساله للبوت
-        if sent_message.video:
-            v = sent_message.video
-            video_unique_ids.add(v.file_unique_id)
-            if v.duration and v.file_size:
-                video_fingerprints.add(f"{v.duration}_{v.file_size}")
+        # حفظ مدة المقطع الذي أخرجه البوت لمنع أعادة إرساله إذا تم تنزيله بالاستوديو
+        if sent_message.video and sent_message.video.duration:
+            video_durations.add(sent_message.video.duration)
 
         # حذف الرسالة في الخلفية بعد 30 ثانية
         asyncio.create_task(delete_message_after_delay(sent_message, 30))
     else:
         video_database.append(file_id)
-        video_unique_ids.add(file_unique_id)
-        if duration > 0 and file_size > 0:
-            video_fingerprints.add(fingerprint)
+        if duration > 0:
+            video_durations.add(duration)
 
         await update.message.reply_text(
             "تم استلام مقطعك بنجاح! أنت أول المشاركين، أرسل مقطعاً آخر أو انتظر مشاركة مستخدم جديد ليصلك مقطعه.",
