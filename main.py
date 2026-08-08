@@ -34,6 +34,14 @@ BLACK_LIST = {994608867}
 video_database = []
 video_unique_ids = set()
 
+# دالة لحذف الرسالة في الخلفية بعد 30 ثانية دون تعطيل البوت
+async def delete_message_after_delay(message, delay: int = 30):
+    await asyncio.sleep(delay)
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
 # التحقق من اشتراك المستخدم في القناة
 async def check_subscription(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     try:
@@ -140,7 +148,6 @@ async def execute_ban(update: Update):
     if target_user_id:
         BLACK_LIST.add(target_user_id)
         
-        # حذف الفيديو إن وجد
         if reply_msg.video:
             file_id = reply_msg.video.file_id
             file_unique_id = reply_msg.video.file_unique_id
@@ -153,7 +160,7 @@ async def execute_ban(update: Update):
     else:
         await update.message.reply_text("❌ لم يتم العثور على أيدي المستخدم في الرسالة التي قمت بالرد عليها.")
 
-# معالجة رسائل الأدمن الأوامر والنصوص
+# معالجة أوامر الأدمن
 async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
@@ -224,11 +231,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         video_database.append(file_id)
         video_unique_ids.add(file_unique_id)
 
-        await asyncio.sleep(30)
-        try:
-            await sent_message.delete()
-        except Exception:
-            pass
+        # حذف الرسالة في الخلفية حتى لا يعلق البوت عند إرسال مقطع جديد سريعاً
+        asyncio.create_task(delete_message_after_delay(sent_message, 30))
     else:
         video_database.append(file_id)
         video_unique_ids.add(file_unique_id)
@@ -247,7 +251,6 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
-    # استقبال أشكال أوامر الأدمن كرسائل متكاملة لتفادي أخطاء المترجم
     app.add_handler(MessageHandler(filters.TEXT, handle_admin_commands))
 
     print("Starting bot polling...")
