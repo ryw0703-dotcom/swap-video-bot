@@ -31,12 +31,10 @@ CHANNEL_LINK = "https://t.me/Riiin69"
 
 BLACK_LIST = {994608867}
 
-# مصفوفة لتخزين الوسائط (صور أو فيديوهات)
-# كل عنصر عبارة عن dictionary يحدد النوع والحجم: {'type': 'video'/'photo', 'file_id': '...', 'unique_id': '...'}
-media_database = []
-media_unique_ids = set()
+video_database = []
+video_unique_ids = set()
 
-# دالة لحذف الرسالة في الخلفية بعد 30 ثانية
+# دالة لحذف الرسالة في الخلفية بعد 30 ثانية دون تعطيل البوت
 async def delete_message_after_delay(message, delay: int = 30):
     await asyncio.sleep(delay)
     try:
@@ -83,9 +81,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "👋 **أهلاً بك في بوت تبادل الصور والمقاطع!**\n\n"
-        "أرسل صورة أو مقطع فيديو الآن ليتم تبادله تلقائياً مع محتوى آخر من مستخدم مختلف.\n"
-        "⚠️ يمنع إرسال المحتوى المكرر.",
+        "👋 **أهلاً بك في بوت تبادل المقاطع!**\n\n"
+        "أرسل مقطع فيديو الآن ليتم تبادله تلقائياً مع مقطع آخر من مستخدم مختلف.\n"
+        "⚠️ يمنع إرسال المقاطع المكررة.",
         reply_markup=get_main_keyboard(),
         parse_mode="Markdown"
     )
@@ -101,7 +99,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "check_sub":
         if await check_subscription(query.from_user.id, context):
             await query.edit_message_text(
-                "✅ **تم التحقق بنجاح!** يمكنك الآن إرسال الصور والمقاطع وتبادلها.",
+                "✅ **تم التحقق بنجاح!** يمكنك الآن إرسال المقاطع وتبادلها.",
                 reply_markup=get_main_keyboard(),
                 parse_mode="Markdown"
             )
@@ -110,32 +108,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- 3. معالجة الإدارة: الحذف والحظر ---
 
-def extract_media_info_from_msg(msg):
-    if msg.video:
-        return msg.video.file_id, msg.video.file_unique_id
-    elif msg.photo:
-        return msg.photo[-1].file_id, msg.photo[-1].file_unique_id
-    return None, None
-
 async def execute_delete(update: Update):
     reply_msg = update.message.reply_to_message
-    if not reply_msg or (not reply_msg.video and not reply_msg.photo):
-        await update.message.reply_text("⚠️ قم بالرد (Reply) على رسالة التقرير التي تحتوي على الصورة أو الفيديو.")
+    if not reply_msg or not reply_msg.video:
+        await update.message.reply_text("⚠️ قم بالرد (Reply) على رسالة التقرير التي تحتوي على الفيديو.")
         return
 
-    file_id, file_unique_id = extract_media_info_from_msg(reply_msg)
+    file_id = reply_msg.video.file_id
+    file_unique_id = reply_msg.video.file_unique_id
 
     removed = False
-    if file_unique_id in media_unique_ids:
-        media_unique_ids.remove(file_unique_id)
-        global media_database
-        media_database = [item for item in media_database if item['unique_id'] != file_unique_id]
+    if file_id in video_database:
+        video_database.remove(file_id)
+        removed = True
+    if file_unique_id in video_unique_ids:
+        video_unique_ids.remove(file_unique_id)
         removed = True
 
     if removed:
-        await update.message.reply_text("✅ **تم حذف المحتوى بنجاح من قاعدة البيانات!**")
+        await update.message.reply_text("✅ **تم حذف المقطع بنجاح من قاعدة البيانات!**")
     else:
-        await update.message.reply_text("ℹ️ المحتوى تم حذفه سابقاً أو غير موجود في القاعدة.")
+        await update.message.reply_text("ℹ️ المقطع تم حذفه سابقاً أو غير موجود في القاعدة.")
 
 async def execute_ban(update: Update):
     reply_msg = update.message.reply_to_message
@@ -155,13 +148,15 @@ async def execute_ban(update: Update):
     if target_user_id:
         BLACK_LIST.add(target_user_id)
         
-        file_id, file_unique_id = extract_media_info_from_msg(reply_msg)
-        if file_unique_id and file_unique_id in media_unique_ids:
-            media_unique_ids.remove(file_unique_id)
-            global media_database
-            media_database = [item for item in media_database if item['unique_id'] != file_unique_id]
+        if reply_msg.video:
+            file_id = reply_msg.video.file_id
+            file_unique_id = reply_msg.video.file_unique_id
+            if file_id in video_database:
+                video_database.remove(file_id)
+            if file_unique_id in video_unique_ids:
+                video_unique_ids.remove(file_unique_id)
 
-        await update.message.reply_text(f"🚫 **تم حظر المستخدم `{target_user_id}` وحذف محتواه بنجاح!**", parse_mode="Markdown")
+        await update.message.reply_text(f"🚫 **تم حظر المستخدم `{target_user_id}` وحذف مقطعه بنجاح!**", parse_mode="Markdown")
     else:
         await update.message.reply_text("❌ لم يتم العثور على أيدي المستخدم في الرسالة التي قمت بالرد عليها.")
 
@@ -178,8 +173,8 @@ async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TY
     elif text in ["/ban", "حظر", "احظره"]:
         await execute_ban(update)
 
-# معالجة الصور والفيديوهات (الوسائط)
-async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# معالجة الفيديوهات
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     if user.id in BLACK_LIST:
@@ -188,79 +183,61 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not await check_subscription(user.id, context):
         await update.message.reply_text(
-            f"⚠️ **عذراً! يجب عليك الاشتراك في القناة أولاً لتبادل الوسائط.**",
+            f"⚠️ **عذراً! يجب عليك الاشتراك في القناة أولاً لتبادل المقاطع.**",
             reply_markup=get_sub_keyboard(),
             parse_mode="Markdown"
         )
         return
 
-    # تحديد نوع المادة المقبولة (فيديو أو صورة)
-    msg = update.message
-    if msg.video:
-        media_type = 'video'
-        file_id = msg.video.file_id
-        file_unique_id = msg.video.file_unique_id
-    elif msg.photo:
-        media_type = 'photo'
-        file_id = msg.photo[-1].file_id  # أعلى جودة للصورة
-        file_unique_id = msg.photo[-1].file_unique_id
-    else:
-        return
+    video = update.message.video
+    file_id = video.file_id
+    file_unique_id = video.file_unique_id
 
-    # كشف ومنع المحتوى المكرر
-    if file_unique_id in media_unique_ids:
+    # كشف ومنع المقاطع المكررة
+    if file_unique_id in video_unique_ids:
         await update.message.reply_text(
-            "⚠️ **هذا المحتوى تم إرساله سابقاً وموجود بالفعل في البوت!**\nالرجاء إرسال صورة أو مقطع جديد غير مكرر.",
+            "⚠️ **هذا المقطع تم إرساله سابقاً وموجود بالفعل في البوت!**\nالرجاء إرسال مقطع جديد غير مكرر.",
             reply_markup=get_main_keyboard()
         )
         return
 
     # إرسال تقرير للآدمن
-    type_str = "مقطع متبادل" if media_type == 'video' else "صورة متبادلة"
     admin_caption = (
-        f"📥 **{type_str} جديد:**\n\n"
+        f"📥 **مقطع متبادل جديد:**\n\n"
         f"👤 **بيانات المشارك:**\n"
         f"الاسم: {user.full_name}\n"
         f"اليوزر: @{user.username if user.username else 'لا يوجد'}\n"
         f"الآيدي: `{user.id}`"
     )
     try:
-        if media_type == 'video':
-            await context.bot.send_video(chat_id=ADMIN_ID, video=file_id, caption=admin_caption, parse_mode="Markdown")
-        else:
-            await context.bot.send_photo(chat_id=ADMIN_ID, photo=file_id, caption=admin_caption, parse_mode="Markdown")
+        await context.bot.send_video(
+            chat_id=ADMIN_ID,
+            video=file_id,
+            caption=admin_caption,
+            parse_mode="Markdown"
+        )
     except Exception as e:
         print(f"Admin Notification Error: {e}")
 
     # عملية التبادل
-    if media_database:
-        random_item = random.choice(media_database)
-        caption_text = "⏳ **قم بتحويل الرسالة أو حفظها فوراً، ستنحذف بعد 30 ثانية!**"
-
-        if random_item['type'] == 'video':
-            sent_message = await update.message.reply_video(
-                video=random_item['file_id'],
-                caption=caption_text,
-                reply_markup=get_main_keyboard()
-            )
-        else:
-            sent_message = await update.message.reply_photo(
-                photo=random_item['file_id'],
-                caption=caption_text,
-                reply_markup=get_main_keyboard()
-            )
+    if video_database:
+        random_video = random.choice(video_database)
+        sent_message = await update.message.reply_video(
+            video=random_video,
+            caption="⏳ **قم بتحويل المقطع أو حفظه فوراً، سينحذف بعد 30 ثانية!**",
+            reply_markup=get_main_keyboard()
+        )
         
-        # إدراج الوسيطة الجديدة
-        media_database.append({'type': media_type, 'file_id': file_id, 'unique_id': file_unique_id})
-        media_unique_ids.add(file_unique_id)
+        video_database.append(file_id)
+        video_unique_ids.add(file_unique_id)
 
-        # حذف الرسالة بعد 30 ثانية
+        # حذف الرسالة في الخلفية حتى لا يعلق البوت عند إرسال مقطع جديد سريعاً
         asyncio.create_task(delete_message_after_delay(sent_message, 30))
     else:
-        media_database.append({'type': media_type, 'file_id': file_id, 'unique_id': file_unique_id})
-        media_unique_ids.add(file_unique_id)
+        video_database.append(file_id)
+        video_unique_ids.add(file_unique_id)
         await update.message.reply_text(
-            "تم استلام مشاركتك بنجاح! أنت أول المشاركين، أرسل صورة/مقطعاً آخر أو انتظر مشاركة مستخدم جديد ليصلك محتواه.",
+            "تم استلام مقطعك بنجاح! أنت أول المشاركين، أرسل مقطعاً آخر أو انتظر مشاركة مستخدم جديد ليصلك مقطعه.",
             reply_markup=get_main_keyboard()
         )
 
@@ -273,8 +250,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    # استقبال المقاطع والصور
-    app.add_handler(MessageHandler(filters.VIDEO | filters.PHOTO, handle_media))
+    app.add_handler(MessageHandler(filters.VIDEO, handle_video))
     app.add_handler(MessageHandler(filters.TEXT, handle_admin_commands))
 
     print("Starting bot polling...")
