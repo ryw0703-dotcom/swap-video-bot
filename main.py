@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import random
 from aiohttp import web
@@ -97,72 +98,73 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("❌ ما زلت غير مشترك في القناة!", show_alert=True)
 
-# --- 3. أوامر الأدمن السريعة (حذف وحظر) ---
+# --- 3. معالجة الإدارة: الحذف والحظر ---
 
-# أمر حذف مقطع فقط (رد على التقرير بـ /del أو كلمة حذف)
-async def delete_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
-        return
-
+async def execute_delete(update: Update):
     reply_msg = update.message.reply_to_message
     if not reply_msg or not reply_msg.video:
-        await update.message.reply_text("⚠️ قم بالرد (Reply) على التقرير الذي يحتوي على الفيديو.")
+        await update.message.reply_text("⚠️ قم بالرد (Reply) على رسالة التقرير التي تحتوي على الفيديو.")
         return
 
     file_id = reply_msg.video.file_id
     file_unique_id = reply_msg.video.file_unique_id
 
+    removed = False
     if file_id in video_database:
         video_database.remove(file_id)
+        removed = True
     if file_unique_id in video_unique_ids:
         video_unique_ids.remove(file_unique_id)
+        removed = True
 
-    await update.message.reply_text("✅ **تم حذف المقطع بنجاح من قاعدة البيانات!**")
+    if removed:
+        await update.message.reply_text("✅ **تم حذف المقطع بنجاح من قاعدة البيانات!**")
+    else:
+        await update.message.reply_text("ℹ️ المقطع تم حذفه سابقاً أو غير موجود في القاعدة.")
 
-# أمر حظر مستخدم وحذف مقطعه (رد على التقرير بـ /ban أو كلمة حظر)
-async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def execute_ban(update: Update):
+    reply_msg = update.message.reply_to_message
+    if not reply_msg:
+        await update.message.reply_text("⚠️ قم بالرد (Reply) على رسالة التقرير.")
+        return
+
+    text_to_search = reply_msg.caption or reply_msg.text or ""
+    ids_found = re.findall(r'\b\d{7,12}\b', text_to_search)
+    
+    target_user_id = None
+    for found_id in ids_found:
+        if int(found_id) != ADMIN_ID:
+            target_user_id = int(found_id)
+            break
+
+    if target_user_id:
+        BLACK_LIST.add(target_user_id)
+        
+        # حذف الفيديو إن وجد
+        if reply_msg.video:
+            file_id = reply_msg.video.file_id
+            file_unique_id = reply_msg.video.file_unique_id
+            if file_id in video_database:
+                video_database.remove(file_id)
+            if file_unique_id in video_unique_ids:
+                video_unique_ids.remove(file_unique_id)
+
+        await update.message.reply_text(f"🚫 **تم حظر المستخدم `{target_user_id}` وحذف مقطعه بنجاح!**", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("❌ لم يتم العثور على أيدي المستخدم في الرسالة التي قمت بالرد عليها.")
+
+# معالجة رسائل الأدمن الأوامر والنصوص
+async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
         return
 
-    reply_msg = update.message.reply_to_message
-    if not reply_msg or not reply_msg.caption:
-        await update.message.reply_text("⚠️ قم بالرد (Reply) على رسالة التقرير الخاصة بالمستخدم.")
-        return
+    text = update.message.text.strip().lower() if update.message.text else ""
 
-    try:
-        caption_lines = reply_msg.caption.split("\n")
-        target_user_id = None
-        for line in caption_lines:
-            if "الآيدي:" in line:
-                target_user_id = int(line.split("الآيدي:")[1].strip().replace("`", ""))
-                break
-
-        if target_user_id:
-            BLACK_LIST.add(target_user_id)
-            
-            if reply_msg.video:
-                file_id = reply_msg.video.file_id
-                file_unique_id = reply_msg.video.file_unique_id
-                if file_id in video_database:
-                    video_database.remove(file_id)
-                if file_unique_id in video_unique_ids:
-                    video_unique_ids.remove(file_unique_id)
-
-            await update.message.reply_text(f"🚫 **تم حظر المستخدم `{target_user_id}` وحذف مقطعه بنجاح!**", parse_mode="Markdown")
-        else:
-            await update.message.reply_text("❌ لم يتم التعرف على آيدي المستخدم من التقرير.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ حدث خطأ أثناء الحظر: {e}")
-
-# معالجة النصوص للرد السريع بكلام عربي
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    if text in ["حذف", "مسح"]:
-        await delete_video(update, context)
-    elif text in ["حظر", "احظره"]:
-        await ban_user(update, context)
+    if text in ["/del", "/delete", "حذف", "مسح"]:
+        await execute_delete(update)
+    elif text in ["/ban", "حظر", "احظره"]:
+        await execute_ban(update)
 
 # معالجة الفيديوهات
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -243,11 +245,10 @@ def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler(["del", "delete"], delete_video))
-    app.add_handler(CommandHandler("ban", ban_user))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    # استقبال أشكال أوامر الأدمن كرسائل متكاملة لتفادي أخطاء المترجم
+    app.add_handler(MessageHandler(filters.TEXT, handle_admin_commands))
 
     print("Starting bot polling...")
     app.run_polling(drop_pending_updates=True)
