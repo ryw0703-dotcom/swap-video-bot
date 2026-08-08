@@ -11,8 +11,8 @@ from telegram.ext import (
     ContextTypes
 )
 
-# التوكن ومعرف القناة ومعرف الآدمن ويوزر البوت
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8846666964:AAEGSetfRCcEMZJewe3hs6lez-OqqjpEAKQ")
+# البيانات الأساسية والتوكن الجديد
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8846666964:AAGRLcOYcFSeqzK4L8_NsAkuWUWcdvyJoWw")
 CHANNEL_USERNAME = "@Riiin69"
 ADMIN_ID = 5122137947  # معرف حسابك لتلقي المقاطع
 BOT_USERNAME = "@ttbadl_bot"
@@ -99,7 +99,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(auto_delete_message(context, msg.chat_id, msg.message_id, 15))
         return
 
-    # 2. إرسال نسخة للآدمن
+    # 2. إرسال نسخة للآدمن (لك)
     user_info = f"👤 **مشارك جديد:**\nالاسم: {user.full_name}\nاليوزر: @{user.username if user.username else 'بدون يوزر'}\nالأيدي: `{user_id}`"
     try:
         await context.bot.send_video(
