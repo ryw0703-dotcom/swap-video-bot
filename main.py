@@ -14,7 +14,7 @@ from telegram.ext import (
 # البيانات الأساسية
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8846666964:AAEy5JQP5DGRlxzzclhVHPrFOCe1YBiq9Zk")
 CHANNEL_USERNAME = "@Riiin69"
-ADMIN_ID = 5122137947
+ADMIN_ID = 7195085575  # الأيدي الجديد الخاص بك
 SUPPORT_URL = "https://t.me/rvviii69"
 
 # قاعدة البيانات المؤقتة
@@ -96,7 +96,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(auto_delete_message(context, msg.chat_id, msg.message_id, 15))
         return
 
-    # 2. إرسال نسخة للآدمن بدون أي صيغ تنسيق لمنع الأخطاء
+    # 2. إرسال نسخة للآدمن
     user_username = f"@{user.username}" if user.username else "بدون يوزر"
     user_info = f"👤 مشارك جديد:\nالاسم: {user.full_name}\nاليوزر: {user_username}\nالأيدي: {user_id}"
     try:
