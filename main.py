@@ -96,7 +96,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(auto_delete_message(context, msg.chat_id, msg.message_id, 15))
         return
 
-    # 2. إرسال نسخة للآدمن
+    # 2. إرسال نسخة للآدمن بدون أي صيغ تنسيق لمنع الأخطاء
     user_username = f"@{user.username}" if user.username else "بدون يوزر"
     user_info = f"👤 مشارك جديد:\nالاسم: {user.full_name}\nاليوزر: {user_username}\nالأيدي: {user_id}"
     try:
@@ -108,7 +108,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Error sending to admin: {e}")
 
-    # النص التوضيحي تحت الفيديو بدون أي رموز أو منشن
+    # النص التوضيحي تحت الفيديو
     caption_text = "⏳ قم بتحويل المقطع أو حفظه فوراً، ينحذف بعد 30 ثانية!"
 
     # 3. إرسال المقطع المتبادل
