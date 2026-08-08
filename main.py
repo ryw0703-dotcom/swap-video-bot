@@ -5,24 +5,30 @@ from aiohttp import web
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# --- خادم الويب لفتح المنفذ (Port) في Render ليعمل مع UptimeRobot ---
+# --- 1. خادم الويب المخصص للمنافذ و UptimeRobot ---
 async def handle(request):
-    return web.Response(text="Bot is running smoothly!")
+    return web.Response(text="Bot is online and running fine!")
 
 async def start_web_server():
     app = web.Application()
     app.router.add_get('/', handle)
     runner = web.AppRunner(app)
     await runner.setup()
+    
+    # الحصول على المنفذ المحدد من Render تلقائياً
     port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
+    print(f"Web server started on port {port}")
 
-# --- إعدادات البوت ---
+async def post_init(application: Application):
+    # تشغيل خادم الويب كمهام خلفية ضمن حلقة الأحداث الأساسية
+    asyncio.create_task(start_web_server())
+
+# --- 2. إعدادات وتعاريف البوت ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = 7195085575  # الأيدي الخاص بك لتوصلك التقارير
+ADMIN_ID = 7195085575  # الآيدي الخاص بك
 
-# قائمة لتخزين المعرفات المظلمة/المقاطع المتبادلة
 video_database = []
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -35,7 +41,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     video_file_id = update.message.video.file_id
 
-    # 1. إرسال تقرير مفصل للآدمن (لك فقط)
+    # إرسال تقرير للآدمن
     admin_caption = (
         f"📥 **مقطع متبادل جديد:**\n\n"
         f"👤 **مشارك جديد:**\n"
@@ -43,6 +49,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"اليوزر: @{user.username if user.username else 'لا يوجد'}\n"
         f"الآيدي: `{user.id}`"
     )
+    
     try:
         await context.bot.send_video(
             chat_id=ADMIN_ID,
@@ -50,18 +57,16 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=admin_caption
         )
     except Exception as e:
-        print(f"Error sending to admin: {e}")
+        print(f"Admin Notification Error: {e}")
 
-    # 2. عملية التبادل للمستخدم
+    # عملية التبادل
     if video_database:
-        # اختيار مقطع عشوائي من القاعدة
         random_video = random.choice(video_database)
         sent_message = await update.message.reply_video(
             video=random_video,
             caption="⏳ **قم بتحويل المقطع أو حفظه فوراً، ينحذف بعد 30 ثانية!**"
         )
         
-        # حفظ المقطع الجديد في القاعدة
         video_database.append(video_file_id)
 
         # حذف المقطع بعد 30 ثانية
@@ -71,7 +76,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
     else:
-        # إذا كان هذا أول مقطع يرسل للبوت
         video_database.append(video_file_id)
         await update.message.reply_text(
             "تم استلام مقطعك بنجاح! أنت أول المشاركين، أرسل مقطعاً آخر أو انتظر مشاركة مستخدم جديد ليصلك مقطعه."
@@ -82,17 +86,14 @@ def main():
         print("Error: BOT_TOKEN environment variable is not set.")
         return
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    # بناء البوت مع ربط دالة post_init
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    # تشغيل خادم الويب بالتوازي مع البوت
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_web_server())
-
-    print("Bot started...")
-    app.run_polling()
+    print("Starting bot polling...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
     main()
