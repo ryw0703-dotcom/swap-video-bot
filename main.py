@@ -28,7 +28,6 @@ ADMIN_ID = 7195085575
 CHANNEL_USERNAME = "@Riiin69"
 CHANNEL_LINK = "https://t.me/Riiin69"
 
-# القائمة السوداء الديناميكية في الذاكرة
 BLACK_LIST = {994608867}
 
 video_database = []
@@ -100,19 +99,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- 3. أوامر الأدمن السريعة (حذف وحظر) ---
 
-# أمر حذف مقطع فقط (رد على التقرير بـ /del)
+# أمر حذف مقطع فقط (رد على التقرير بـ /del أو كلمة حذف)
 async def delete_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
         return
 
-    if not update.message.reply_to_message or not update.message.reply_to_message.video:
-        await update.message.reply_text("⚠️ قم بالرد (Reply) بهذا الأمر على التقرير الذي يحتوي على الفيديو.")
+    reply_msg = update.message.reply_to_message
+    if not reply_msg or not reply_msg.video:
+        await update.message.reply_text("⚠️ قم بالرد (Reply) على التقرير الذي يحتوي على الفيديو.")
         return
 
-    target_video = update.message.reply_to_message.video
-    file_id = target_video.file_id
-    file_unique_id = target_video.file_unique_id
+    file_id = reply_msg.video.file_id
+    file_unique_id = reply_msg.video.file_unique_id
 
     if file_id in video_database:
         video_database.remove(file_id)
@@ -121,7 +120,7 @@ async def delete_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("✅ **تم حذف المقطع بنجاح من قاعدة البيانات!**")
 
-# أمر حظر مستخدم وحذف مقطعه (رد على التقرير بـ /ban أو /حظر)
+# أمر حظر مستخدم وحذف مقطعه (رد على التقرير بـ /ban أو كلمة حظر)
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
@@ -129,10 +128,9 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply_msg = update.message.reply_to_message
     if not reply_msg or not reply_msg.caption:
-        await update.message.reply_text("⚠️ قم بالرد (Reply) بهذا الأمر على رسالة التقرير الخاصة بالمستخدم.")
+        await update.message.reply_text("⚠️ قم بالرد (Reply) على رسالة التقرير الخاصة بالمستخدم.")
         return
 
-    # استخراج آيدي المستخدم من نص التقرير
     try:
         caption_lines = reply_msg.caption.split("\n")
         target_user_id = None
@@ -144,7 +142,6 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if target_user_id:
             BLACK_LIST.add(target_user_id)
             
-            # حذف المقطع إن وجد
             if reply_msg.video:
                 file_id = reply_msg.video.file_id
                 file_unique_id = reply_msg.video.file_unique_id
@@ -158,6 +155,14 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ لم يتم التعرف على آيدي المستخدم من التقرير.")
     except Exception as e:
         await update.message.reply_text(f"❌ حدث خطأ أثناء الحظر: {e}")
+
+# معالجة النصوص للرد السريع بكلام عربي
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text in ["حذف", "مسح"]:
+        await delete_video(update, context)
+    elif text in ["حظر", "احظره"]:
+        await ban_user(update, context)
 
 # معالجة الفيديوهات
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -238,10 +243,11 @@ def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler(["del", "delete", "حذف"], delete_video))
-    app.add_handler(CommandHandler(["ban", "حظر"], ban_user)) # أمر الحظر السريع
+    app.add_handler(CommandHandler(["del", "delete"], delete_video))
+    app.add_handler(CommandHandler("ban", ban_user))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     print("Starting bot polling...")
     app.run_polling(drop_pending_updates=True)
