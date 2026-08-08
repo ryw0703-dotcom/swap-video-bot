@@ -15,7 +15,6 @@ from telegram.ext import (
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8846666964:AAEy5JQP5DGRlxzzclhVHPrFOCe1YBiq9Zk")
 CHANNEL_USERNAME = "@Riiin69"
 ADMIN_ID = 5122137947
-BOT_USERNAME = "@ttbadl_bot"
 SUPPORT_URL = "https://t.me/rvviii69"
 
 # قاعدة البيانات المؤقتة
@@ -61,19 +60,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not await is_subscribed(user_id, context):
         await update.message.reply_text(
-            f"⚠️ <b>تنبيه:</b> لاستخدام البوت، يجب عليك الاشتراك في القناة أولاً:\n{CHANNEL_USERNAME}\n\nبعد الاشتراك اضغط على زر التحقق بالأسفل 👇",
-            reply_markup=get_sub_keyboard(),
-            parse_mode="HTML"
+            f"⚠️ تنبيه: لاستخدام البوت، يجب عليك الاشتراك في القناة أولاً:\n{CHANNEL_USERNAME}\n\nبعد الاشتراك اضغط على زر التحقق بالأسفل 👇",
+            reply_markup=get_sub_keyboard()
         )
         return
 
     await update.message.reply_text(
-        "👋 <b>أهلاً بك في بوت تبادل المقاطع!</b>\n\n"
-        "🎬 <b>كيف يعمل البوت؟</b>\n"
+        "👋 أهلاً بك في بوت تبادل المقاطع!\n\n"
+        "🎬 كيف يعمل البوت؟\n"
         "أرسل لي أي مقطع فيديو من عندك، وسأرد عليك فوراً بمقطع عشوائي أرسله مستخدم آخر!\n\n"
-        "⚠️ <b>تنبيه مهم:</b> المقطع ينحذف بعد <b>30 ثانية</b>، قم بتحويله لرسائلك المحفوظة أو حفظه في جهازك فوراً! ⏳",
-        reply_markup=get_main_keyboard(),
-        parse_mode="HTML"
+        "⚠️ تنبيه مهم: المقطع ينحذف بعد 30 ثانية، قم بتحويله لرسائلك المحفوظة أو حفظه في جهازك فوراً! ⏳",
+        reply_markup=get_main_keyboard()
     )
 
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -83,9 +80,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not await is_subscribed(user_id, context):
         await update.message.reply_text(
-            f"⚠️ <b>عذراً!</b> يجب عليك الاشتراك في القناة أولاً لتبادل المقاطع:\n{CHANNEL_USERNAME}",
-            reply_markup=get_sub_keyboard(),
-            parse_mode="HTML"
+            f"⚠️ عذراً! يجب عليك الاشتراك في القناة أولاً لتبادل المقاطع:\n{CHANNEL_USERNAME}",
+            reply_markup=get_sub_keyboard()
         )
         return
 
@@ -95,26 +91,25 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 1. منع التكرار
     if file_unique_id in unique_videos:
-        msg = await update.message.reply_text("❌ <b>عذراً! هذا المقطع تم إرساله سابقاً ورُفض تكراره.</b>\nيرجى إرسال مقطع جديد غير مكرر.", parse_mode="HTML")
+        msg = await update.message.reply_text("❌ عذراً! هذا المقطع تم إرساله سابقاً ورُفض تكراره.\nيرجى إرسال مقطع جديد غير مكرر.")
         asyncio.create_task(auto_delete_message(context, update.message.chat_id, update.message.message_id, 15))
         asyncio.create_task(auto_delete_message(context, msg.chat_id, msg.message_id, 15))
         return
 
     # 2. إرسال نسخة للآدمن
     user_username = f"@{user.username}" if user.username else "بدون يوزر"
-    user_info = f"👤 <b>مشارك جديد:</b>\nالاسم: {user.full_name}\nاليوزر: {user_username}\nالأيدي: <code>{user_id}</code>"
+    user_info = f"👤 مشارك جديد:\nالاسم: {user.full_name}\nاليوزر: {user_username}\nالأيدي: {user_id}"
     try:
         await context.bot.send_video(
             chat_id=ADMIN_ID,
             video=file_id,
-            caption=f"📥 <b>مقطع متبادل جديد:</b>\n\n{user_info}\n\n- {BOT_USERNAME} -",
-            parse_mode="HTML"
+            caption=f"📥 مقطع متبادل جديد:\n\n{user_info}"
         )
     except Exception as e:
         print(f"Error sending to admin: {e}")
 
-    # النص والمنشن التوضيحي تحت الفيديو
-    caption_text = f"⏳ <b>قم بتحويل المقطع أو حفظه فوراً، ينحذف بعد 30 ثانية!</b>\n\n- {BOT_USERNAME} -"
+    # النص التوضيحي تحت الفيديو بدون أي رموز أو منشن
+    caption_text = "⏳ قم بتحويل المقطع أو حفظه فوراً، ينحذف بعد 30 ثانية!"
 
     # 3. إرسال المقطع المتبادل
     available_videos = [v for v in video_database if v != file_id]
@@ -124,15 +119,13 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent_bot_msg = await update.message.reply_video(
             video=selected_video,
             caption=caption_text,
-            reply_markup=get_main_keyboard(),
-            parse_mode="HTML"
+            reply_markup=get_main_keyboard()
         )
     else:
         sent_bot_msg = await update.message.reply_video(
             video=file_id,
             caption=caption_text,
-            reply_markup=get_main_keyboard(),
-            parse_mode="HTML"
+            reply_markup=get_main_keyboard()
         )
 
     # حفظ بصمة الفيديو
@@ -152,15 +145,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = query.from_user.id
         if await is_subscribed(user_id, context):
             await query.edit_message_text(
-                "✅ <b>تم التحقق بنجاح!</b>\nأهلاً بك، أرسل لي الآن أي مقطع فيديو للتبادل 🎬\n\n⚠️ <i>ملاحظة: المقاطع تنحذف بعد 30 ثانية، قم بتحويلها وحفظها!</i>",
-                reply_markup=get_main_keyboard(),
-                parse_mode="HTML"
+                "✅ تم التحقق بنجاح!\nأهلاً بك، أرسل لي الآن أي مقطع فيديو للتبادل 🎬\n\n⚠️ ملاحظة: المقاطع تنحذف بعد 30 ثانية، قم بتحويلها وحفظها!",
+                reply_markup=get_main_keyboard()
             )
         else:
             await query.edit_message_text(
-                f"❌ <b>لم يتم العثور على اشتراكك!</b>\nيرجى الاشتراك في القناة أولاً ثم الضغط على زر التحقق:\n{CHANNEL_USERNAME}",
-                reply_markup=get_sub_keyboard(),
-                parse_mode="HTML"
+                f"❌ لم يتم العثور على اشتراكك!\nيرجى الاشتراك في القناة أولاً ثم الضغط على زر التحقق:\n{CHANNEL_USERNAME}",
+                reply_markup=get_sub_keyboard()
             )
 
 def main():
