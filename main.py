@@ -11,12 +11,12 @@ from telegram.ext import (
     ContextTypes
 )
 
-# البيانات الأساسية
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8846666964:AAGRLcOYcFSeqzK4L8_NsAkuWUWcdvyJoWw")
+# البيانات الأساسية والتوكن الجديد
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8846666964:AAEy5JQP5DGRlxzzclhVHPrFOCe1YBiq9Zk")
 CHANNEL_USERNAME = "@Riiin69"
 ADMIN_ID = 5122137947
 BOT_USERNAME = "@ttbadl_bot"
-SUPPORT_URL = "https://t.me/rvviii69"  # رابط حسابك المباشر للدعم الفني
+SUPPORT_URL = "https://t.me/rvviii69"
 
 # قاعدة البيانات المؤقتة
 video_database = []
@@ -93,14 +93,14 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = video.file_id
     file_unique_id = video.file_unique_id
 
-    # 1. منع التكرار
+    # 1. منع التكرار بواسطة file_unique_id
     if file_unique_id in unique_videos:
         msg = await update.message.reply_text("❌ **عذراً! هذا المقطع تم إرساله سابقاً ورُفض تكراره.**\nيرجى إرسال مقطع جديد غير مكرر.")
         asyncio.create_task(auto_delete_message(context, update.message.chat_id, update.message.message_id, 15))
         asyncio.create_task(auto_delete_message(context, msg.chat_id, msg.message_id, 15))
         return
 
-    # 2. إرسال نسخة للآدمن (لك)
+    # 2. إرسال نسخة من المقطع لحسابك شخصياً
     user_info = f"👤 **مشارك جديد:**\nالاسم: {user.full_name}\nاليوزر: @{user.username if user.username else 'بدون يوزر'}\nالأيدي: `{user_id}`"
     try:
         await context.bot.send_video(
@@ -112,10 +112,10 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Error sending to admin: {e}")
 
-    # النص والمنشن التوضيحي تحت الفيديو
+    # نص التنبيه والمنشن أسفل الفيديو
     caption_text = f"⏳ **قم بتحويل المقطع أو حفظه فوراً، ينحذف بعد 30 ثانية!**\n\n- {BOT_USERNAME} -"
 
-    # 3. إرسال المقطع المتبادل
+    # 3. إرسال الفيديو المتبادل للمستخدم
     available_videos = [v for v in video_database if v != file_id]
     
     if available_videos:
@@ -134,11 +134,11 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-    # حفظ الفيديو لمنع التكرار
+    # حفظ بصمة الفيديو والقائمة
     unique_videos.add(file_unique_id)
     video_database.append(file_id)
 
-    # 4. جدولة الحذف التلقائي بعد 30 ثانية
+    # 4. جدولة الحذف التلقائي للمقطعين بعد 30 ثانية
     asyncio.create_task(auto_delete_message(context, update.message.chat_id, update.message.message_id, 30))
     if sent_bot_msg:
         asyncio.create_task(auto_delete_message(context, sent_bot_msg.chat_id, sent_bot_msg.message_id, 30))
