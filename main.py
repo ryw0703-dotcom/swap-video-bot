@@ -33,6 +33,7 @@ BLACK_LIST = {994608867}
 
 video_database = []
 video_unique_ids = set()
+video_fingerprints = set()  # بصمات المقاطع (الحجم + المدة) لمنع التنزيل والإعادة
 
 # دالة لحذف الرسالة في الخلفية بعد 30 ثانية دون تعطيل البوت
 async def delete_message_after_delay(message, delay: int = 30):
@@ -116,6 +117,7 @@ async def execute_delete(update: Update):
 
     file_id = reply_msg.video.file_id
     file_unique_id = reply_msg.video.file_unique_id
+    fingerprint = f"{reply_msg.video.duration}_{reply_msg.video.file_size}"
 
     removed = False
     if file_id in video_database:
@@ -123,6 +125,9 @@ async def execute_delete(update: Update):
         removed = True
     if file_unique_id in video_unique_ids:
         video_unique_ids.remove(file_unique_id)
+        removed = True
+    if fingerprint in video_fingerprints:
+        video_fingerprints.remove(fingerprint)
         removed = True
 
     if removed:
@@ -151,10 +156,13 @@ async def execute_ban(update: Update):
         if reply_msg.video:
             file_id = reply_msg.video.file_id
             file_unique_id = reply_msg.video.file_unique_id
+            fingerprint = f"{reply_msg.video.duration}_{reply_msg.video.file_size}"
             if file_id in video_database:
                 video_database.remove(file_id)
             if file_unique_id in video_unique_ids:
                 video_unique_ids.remove(file_unique_id)
+            if fingerprint in video_fingerprints:
+                video_fingerprints.remove(fingerprint)
 
         await update.message.reply_text(f"🚫 **تم حظر المستخدم `{target_user_id}` وحذف مقطعه بنجاح!**", parse_mode="Markdown")
     else:
@@ -192,9 +200,14 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video = update.message.video
     file_id = video.file_id
     file_unique_id = video.file_unique_id
+    
+    # إنشاء بصمة خاصة بالمقطع (المدة بالثواني + حجم الملف بالبايت)
+    duration = video.duration or 0
+    file_size = video.file_size or 0
+    fingerprint = f"{duration}_{file_size}"
 
-    # كشف ومنع المقاطع المكررة أو المقاطع المستلمة سابقاً من البوت
-    if file_unique_id in video_unique_ids:
+    # كشف ومنع المقاطع المكررة سواء بالمعرف أو ببصمة المقطع وحجمه
+    if file_unique_id in video_unique_ids or fingerprint in video_fingerprints:
         await update.message.reply_text(
             "⚠️ **هذا المقطع موجود بالفعل في قاعدة البيانات أو تم استلامه من البوت سابقاً!**\nالرجاء إرسال مقطع جديد غير مكرر.",
             reply_markup=get_main_keyboard()
@@ -228,19 +241,27 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
         
-        # إضافة مقطع المستخدم المرسل إلى القاعدة لحفظه
+        # حفظ بيانات مقطع المستخدم
         video_database.append(file_id)
         video_unique_ids.add(file_unique_id)
+        if duration > 0 and file_size > 0:
+            video_fingerprints.add(fingerprint)
 
-        # إضافة المعرف الفريد للمقطع المرسل من البوت للقائمة لمنع إعادة إرساله لاحقاً
+        # تسجيل بصمة المقطع المُرْسَل لمنع أي شخص من تنزيله وإعادة إرساله للبوت
         if sent_message.video:
-            video_unique_ids.add(sent_message.video.file_unique_id)
+            v = sent_message.video
+            video_unique_ids.add(v.file_unique_id)
+            if v.duration and v.file_size:
+                video_fingerprints.add(f"{v.duration}_{v.file_size}")
 
         # حذف الرسالة في الخلفية بعد 30 ثانية
         asyncio.create_task(delete_message_after_delay(sent_message, 30))
     else:
         video_database.append(file_id)
         video_unique_ids.add(file_unique_id)
+        if duration > 0 and file_size > 0:
+            video_fingerprints.add(fingerprint)
+
         await update.message.reply_text(
             "تم استلام مقطعك بنجاح! أنت أول المشاركين، أرسل مقطعاً آخر أو انتظر مشاركة مستخدم جديد ليصلك مقطعه.",
             reply_markup=get_main_keyboard()
