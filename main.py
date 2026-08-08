@@ -83,7 +83,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 **أهلاً بك في بوت تبادل المقاطع!**\n\n"
         "أرسل مقطع فيديو الآن ليتم تبادله تلقائياً مع مقطع آخر من مستخدم مختلف.\n"
-        "⚠️ يمنع إرسال المقاطع المكررة.",
+        "⚠️ يمنع إرسال المقاطع المكررة أو إعادة إرسال المقاطع المستلمة من البوت.",
         reply_markup=get_main_keyboard(),
         parse_mode="Markdown"
     )
@@ -193,10 +193,10 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = video.file_id
     file_unique_id = video.file_unique_id
 
-    # كشف ومنع المقاطع المكررة
+    # كشف ومنع المقاطع المكررة أو المقاطع المستلمة سابقاً من البوت
     if file_unique_id in video_unique_ids:
         await update.message.reply_text(
-            "⚠️ **هذا المقطع تم إرساله سابقاً وموجود بالفعل في البوت!**\nالرجاء إرسال مقطع جديد غير مكرر.",
+            "⚠️ **هذا المقطع موجود بالفعل في قاعدة البيانات أو تم استلامه من البوت سابقاً!**\nالرجاء إرسال مقطع جديد غير مكرر.",
             reply_markup=get_main_keyboard()
         )
         return
@@ -228,10 +228,15 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
         
+        # إضافة مقطع المستخدم المرسل إلى القاعدة لحفظه
         video_database.append(file_id)
         video_unique_ids.add(file_unique_id)
 
-        # حذف الرسالة في الخلفية حتى لا يعلق البوت عند إرسال مقطع جديد سريعاً
+        # إضافة المعرف الفريد للمقطع المرسل من البوت للقائمة لمنع إعادة إرساله لاحقاً
+        if sent_message.video:
+            video_unique_ids.add(sent_message.video.file_unique_id)
+
+        # حذف الرسالة في الخلفية بعد 30 ثانية
         asyncio.create_task(delete_message_after_delay(sent_message, 30))
     else:
         video_database.append(file_id)
