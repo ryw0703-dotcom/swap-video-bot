@@ -11,11 +11,12 @@ from telegram.ext import (
     ContextTypes
 )
 
-# البيانات الأساسية والتوكن الجديد
+# البيانات الأساسية
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8846666964:AAGRLcOYcFSeqzK4L8_NsAkuWUWcdvyJoWw")
 CHANNEL_USERNAME = "@Riiin69"
-ADMIN_ID = 5122137947  # معرف حسابك لتلقي المقاطع
+ADMIN_ID = 5122137947
 BOT_USERNAME = "@ttbadl_bot"
+SUPPORT_URL = "https://t.me/rvviii69"  # رابط حسابك المباشر للدعم الفني
 
 # قاعدة البيانات المؤقتة
 video_database = []
@@ -34,20 +35,20 @@ def get_sub_keyboard():
     keyboard = [
         [InlineKeyboardButton("📢 اشترك في القناة", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")],
         [InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub")],
-        [InlineKeyboardButton("👨‍💻 الدعم الفني", url="https://t.me/ryw0703")]
+        [InlineKeyboardButton("👨‍💻 الدعم الفني", url=SUPPORT_URL)]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_main_keyboard():
     """لوحة الأزرار الرئيسية للبوت"""
     keyboard = [
-        [InlineKeyboardButton("👨‍💻 الدعم الفني", url="https://t.me/ryw0703")],
+        [InlineKeyboardButton("👨‍💻 الدعم الفني", url=SUPPORT_URL)],
         [InlineKeyboardButton("📢 القناة الرسمية", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 async def auto_delete_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delay: int = 30):
-    """دالة لحذف الرسائل بعد وقت محدد (30 ثانية)"""
+    """حذف الرسائل تلقائياً بعد 30 ثانية"""
     await asyncio.sleep(delay)
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
@@ -76,7 +77,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة استقبال الفيديوهات"""
+    """استقبال ومبادلة الفيديوهات"""
     user = update.effective_user
     user_id = user.id
 
@@ -111,25 +112,29 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Error sending to admin: {e}")
 
-    # 3. إرسال مقطع عشوائي للمستخدم
-    sent_bot_msg = None
-    if video_database:
-        random_video = random.choice(video_database)
-        caption_text = f"⏳ **قم بتحويل المقطع أو حفظه فوراً، ينحذف بعد 30 ثانية!**\n\n- {BOT_USERNAME} -"
-        
+    # النص والمنشن التوضيحي تحت الفيديو
+    caption_text = f"⏳ **قم بتحويل المقطع أو حفظه فوراً، ينحذف بعد 30 ثانية!**\n\n- {BOT_USERNAME} -"
+
+    # 3. إرسال المقطع المتبادل
+    available_videos = [v for v in video_database if v != file_id]
+    
+    if available_videos:
+        selected_video = random.choice(available_videos)
         sent_bot_msg = await update.message.reply_video(
-            video=random_video,
+            video=selected_video,
             caption=caption_text,
             reply_markup=get_main_keyboard(),
             parse_mode="Markdown"
         )
     else:
-        sent_bot_msg = await update.message.reply_text(
-            "✅ **تم استلام مقطعك بنجاح!**\nأنت أول مشارك في البوت، أرسل مقطعاً آخر أو انتظر مشاركات البقية! 🚀",
-            reply_markup=get_main_keyboard()
+        sent_bot_msg = await update.message.reply_video(
+            video=file_id,
+            caption=caption_text,
+            reply_markup=get_main_keyboard(),
+            parse_mode="Markdown"
         )
 
-    # حفظ الفيديو لمنع التكرار ولإعادة إرساله
+    # حفظ الفيديو لمنع التكرار
     unique_videos.add(file_unique_id)
     video_database.append(file_id)
 
@@ -139,7 +144,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(auto_delete_message(context, sent_bot_msg.chat_id, sent_bot_msg.message_id, 30))
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الضغط على الزر"""
     query = update.callback_query
     await query.answer()
 
