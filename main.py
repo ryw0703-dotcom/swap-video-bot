@@ -35,7 +35,7 @@ BLACK_LIST = {994608867}
 admin_upload_mode = False
 admin_added_count = 0
 
-# دوال قراءة وحفظ قاعدة البيانات في ملف محلي محفور على السيرفر
+# دوال قراءة وحفظ قاعدة البيانات في ملف محلي ثابت
 def load_data():
     v_db = []
     v_sig = set()
@@ -56,6 +56,7 @@ def save_data():
             f.write(f"{file_id}|saved\n")
 
 video_database, video_signatures = load_data()
+user_history = {} 
 
 async def delete_message_after_delay(message, delay: int = 30):
     await asyncio.sleep(delay)
@@ -125,12 +126,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("❌ ما زلت غير مشترك في القناة!", show_alert=True)
 
-# --- 3. أمر الحذف الفعلي والدائم للأدمن ---
+# --- 3. أمر الحذف الفعلي اليدوي للأدمن ---
 
 async def execute_delete(update: Update):
     reply_msg = update.message.reply_to_message
     if not reply_msg or not reply_msg.video:
-        await update.message.reply_text("⚠️ قم بالرد (Reply) على رسالة التقرير التي تحتوي على الفيديو المراد حذفه.")
+        await update.message.reply_text("⚠️ قم بالرد (Reply) على رسالة التقرير التي تحتوي على الفيديو.")
         return
 
     file_id = reply_msg.video.file_id
@@ -145,8 +146,8 @@ async def execute_delete(update: Update):
         removed = True
 
     if removed:
-        save_data()  # كتابة التعديل فوراً في الملف المحلي
-        await update.message.reply_text("✅ **تم حذف المقطع نهائياً وبشكل قطعي من البوت ولن يظهر مجدداً لأحد!**")
+        save_data()
+        await update.message.reply_text("✅ **تم حذف المقطع نهائياً ولن يظهر مجدداً لأحد!**")
     else:
         await update.message.reply_text("ℹ️ المقطع غير موجود أو تم حذفه سابقاً.")
 
@@ -194,7 +195,7 @@ async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TY
         admin_added_count = 0
         await update.message.reply_text(
             "📥 **تم تفعيل وضع تعبئة المقاطع!**\n"
-            "أرسل المقاطع الآن، وعند الانتهاء أرسل `/done` أو كلمة **تم**.",
+            "أرسل المقاطع، وعند الانتهاء أرسل `/done` أو **تم**.",
             parse_mode="Markdown"
         )
     elif text in ["/done", "تم", "إنهاء", "انهاء"] and admin_upload_mode:
@@ -202,7 +203,7 @@ async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TY
         save_data()
         await update.message.reply_text(
             f"✅ **تم حفظ المقاطع وإغلاق وضع التعبئة!**\n"
-            f"📊 المضافة: `{admin_added_count}` | الإجمالي الكلي: `{len(video_database)}`.",
+            f"📊 المضافة: `{admin_added_count}` | الإجمالي: `{len(video_database)}`.",
             parse_mode="Markdown"
         )
     elif text in ["/del", "/delete", "حذف", "مسح"]:
@@ -214,7 +215,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_added_count
     user = update.effective_user
     
-    # 1. وضع التعبئة للآدمن
     if user.id == ADMIN_ID and admin_upload_mode:
         video = update.message.video
         file_id = video.file_id
@@ -227,7 +227,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_data()
         return
 
-    # 2. قيود المستخدم العادي
     if user.id in BLACK_LIST:
         await update.message.reply_text("🚫 **عذراً، تم حظرك من استخدام هذا البوت.**")
         return
@@ -244,7 +243,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = video.file_id
     sig = f"{video.duration}_{video.file_size}"
 
-    # منع التكرار بناءً على الـ file_id أو البصمة المركبة
     if file_id in video_database or sig in video_signatures:
         await update.message.reply_text(
             "⚠️ **هذا المقطع مستخدم سابقاً أو تم استلامه من البوت!**\nالرجاء إرسال مقطع جديد من إعدادك.",
@@ -252,7 +250,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # إرسال تقرير الأدمن
     admin_caption = (
         f"📥 **مقطع متبادل جديد:**\n\n"
         f"👤 **الاسم:** {user.full_name}\n"
@@ -269,8 +266,15 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Admin Notification Error: {e}")
 
-    # تصفية المقاطع المتاحة لاستبعاد مقطع المستخدم الحالي منعاً مطلقاً لرجيعه له
-    available_videos = [v for v in video_database if v != file_id]
+    if user.id not in user_history:
+        user_history[user.id] = set()
+
+    # تصفية المقاطع للمستخدم لمنع تكرارها له شخصياً متى ما وُجدت مقاطع جديدة
+    seen_videos = user_history[user.id]
+    available_videos = [v for v in video_database if v != file_id and v not in seen_videos]
+
+    if not available_videos:
+        available_videos = [v for v in video_database if v != file_id]
 
     if available_videos:
         random_video = random.choice(available_videos)
@@ -280,11 +284,11 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard()
         )
         
-        # تسجيل مقطع المستخدم الوارد
+        user_history[user.id].add(random_video)
+
         video_database.append(file_id)
         video_signatures.add(sig)
 
-        # تسجيل بصمة المقطع الصادر لمنع إعادة تدويره
         if sent_message.video:
             out_sig = f"{sent_message.video.duration}_{sent_message.video.file_size}"
             video_signatures.add(out_sig)
