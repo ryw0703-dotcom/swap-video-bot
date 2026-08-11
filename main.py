@@ -35,7 +35,6 @@ BLACK_LIST = {994608867}
 admin_upload_mode = False
 admin_added_count = 0
 
-# دوال قراءة وحفظ قاعدة البيانات في ملف محلي ثابت
 def load_data():
     v_db = []
     v_sig = set()
@@ -126,7 +125,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("❌ ما زلت غير مشترك في القناة!", show_alert=True)
 
-# --- 3. أمر الحذف الفعلي اليدوي للأدمن ---
+# --- 3. أوامر الأدمن والحذف ---
 
 async def execute_delete(update: Update):
     reply_msg = update.message.reply_to_message
@@ -194,8 +193,9 @@ async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TY
         admin_upload_mode = True
         admin_added_count = 0
         await update.message.reply_text(
-            "📥 **تم تفعيل وضع تعبئة المقاطع!**\n"
-            "أرسل المقاطع، وعند الانتهاء أرسل `/done` أو **تم**.",
+            "📥 **تم تفعيل وضع تعبئة المقاطع!**\n\n"
+            "قم بإرسال المقاطع الآن (فردية أو كـ ألبوم مجتمع).\n"
+            "عند الانتهاء، أرسل `/done` أو كلمة **تم** للإنهاء.",
             parse_mode="Markdown"
         )
     elif text in ["/done", "تم", "إنهاء", "انهاء"] and admin_upload_mode:
@@ -203,7 +203,7 @@ async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TY
         save_data()
         await update.message.reply_text(
             f"✅ **تم حفظ المقاطع وإغلاق وضع التعبئة!**\n"
-            f"📊 المضافة: `{admin_added_count}` | الإجمالي: `{len(video_database)}`.",
+            f"📊 المضافة: `{admin_added_count}` | الإجمالي الكلي: `{len(video_database)}`.",
             parse_mode="Markdown"
         )
     elif text in ["/del", "/delete", "حذف", "مسح"]:
@@ -269,7 +269,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id not in user_history:
         user_history[user.id] = set()
 
-    # تصفية المقاطع للمستخدم لمنع تكرارها له شخصياً متى ما وُجدت مقاطع جديدة
     seen_videos = user_history[user.id]
     available_videos = [v for v in video_database if v != file_id and v not in seen_videos]
 
@@ -315,9 +314,10 @@ def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler(["add", "done", "del", "delete", "ban"], handle_admin_commands))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_commands))
+    app.add_handler(MessageHandler(filters.TEXT, handle_admin_commands))
 
     print("Starting bot polling...")
     app.run_polling(drop_pending_updates=True)
