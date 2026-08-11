@@ -256,7 +256,7 @@ async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TY
     elif text in ["/stats", "إحصائيات", "احصائيات"]:
         await stats_command(update, context)
 
-# ==================== معالجة الفيديوهات (محسّنة ضد التكرار) ====================
+# ==================== معالجة الفيديوهات ====================
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_added_count
 
@@ -265,7 +265,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = video.file_id
     sig = make_signature(video)
 
-    # ===== وضع تعبئة الأدمن =====
+    # وضع تعبئة الأدمن
     if user.id == ADMIN_ID and admin_upload_mode:
         if file_id not in videos:
             videos[file_id] = sig
@@ -273,7 +273,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await save_data()
         return
 
-    # ===== فحوصات المستخدم =====
+    # فحوصات المستخدم
     if user.id in blacklist:
         await update.message.reply_text(
             "🚫 **عذراً، تم حظرك من استخدام هذا البوت.**",
@@ -289,7 +289,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ===== Rate Limit =====
+    # Rate Limit
     now = time.time()
     if user.id in last_action and (now - last_action[user.id]) < RATE_LIMIT_SECONDS:
         remaining = int(RATE_LIMIT_SECONDS - (now - last_action[user.id]))
@@ -297,7 +297,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     last_action[user.id] = now
 
-    # ===== منع تكرار المقاطع =====
+    # منع تكرار المقاطع
     if file_id in videos or sig in videos.values():
         await update.message.reply_text(
             "⚠️ **هذا المقطع مستخدم سابقاً أو تم استلامه من البوت!**\n"
@@ -307,7 +307,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ===== إشعار الأدمن =====
+    # إشعار الأدمن
     admin_caption = (
         f"📥 **مقطع متبادل جديد:**\n\n"
         f"👤 **الاسم:** {user.full_name}\n"
@@ -324,7 +324,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Admin Notification Error: {e}")
 
-    # ===== اختيار مقطع مختلف تماماً =====
+    # اختيار مقطع مختلف تماماً
     seen = user_history[user.id]
 
     available = [
@@ -374,12 +374,13 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ==================== التشغيل ====================
-async def main():
+def main():
     if not BOT_TOKEN:
         print("Error: BOT_TOKEN environment variable is not set.")
         return
 
-    await load_data()
+    # تحميل البيانات قبل تشغيل البوت
+    asyncio.run(load_data())
 
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
@@ -390,7 +391,7 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_commands))
 
     print("Starting bot...")
-    await app.run_polling(drop_pending_updates=True)
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
