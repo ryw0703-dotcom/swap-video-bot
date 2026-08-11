@@ -1,63 +1,81 @@
 import os
 import re
+import json
+import time
 import asyncio
 import random
+from collections import defaultdict
 from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, filters, ContextTypes
+)
 from telegram.error import TelegramError
 
-# --- 1. خادم الويب المخصص لـ Render و UptimeRobot ---
-async def handle(request):
-    return web.Response(text="Bot is online and running fine!")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get('/', handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-
-async def post_init(application: Application):
-    asyncio.create_task(start_web_server())
-
-# --- 2. إعدادات البوت وحفظ البيانات الدائم ---
+# ==================== إعدادات ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 7195085575
 CHANNEL_USERNAME = "@Riiin69"
 CHANNEL_LINK = "https://t.me/Riiin69"
 
-DB_FILE = "videos_db.txt"
-BLACK_LIST = {994608867}
+DB_FILE = "bot_data.json"
+DELETE_AFTER = 30
+RATE_LIMIT_SECONDS = 20
 
+# ==================== بيانات التشغيل ====================
+videos = {}                         # {file_id: signature}
+blacklist = {994608867}
+user_history = defaultdict(set)
+last_action = {}
 admin_upload_mode = False
 admin_added_count = 0
+data_lock = asyncio.Lock()
 
-def load_data():
-    v_db = []
-    v_sig = set()
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                parts = line.strip().split("|")
-                if len(parts) == 2:
-                    file_id, sig = parts
-                    if file_id not in v_db:
-                        v_db.append(file_id)
-                    v_sig.add(sig)
-    return v_db, v_sig
+# ==================== خادم الويب ====================
+async def handle(request):
+    return web.Response(text="Bot is online and running fine!")
 
-def save_data():
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        for file_id in video_database:
-            f.write(f"{file_id}|saved\n")
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
 
-video_database, video_signatures = load_data()
-user_history = {} 
+async def post_init(application: Application):
+    asyncio.create_task(start_web_server())
 
-async def delete_message_after_delay(message, delay: int = 30):
+# ==================== حفظ وتحميل البيانات ====================
+async def load_data():
+    global videos, blacklist
+    if not os.path.exists(DB_FILE):
+        return
+    try:
+        async with data_lock:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                videos = data.get("videos", {})
+                blacklist = set(data.get("blacklist", [994608867]))
+    except Exception as e:
+        print(f"Error loading data: {e}")
+
+async def save_data():
+    try:
+        async with data_lock:
+            data = {
+                "videos": videos,
+                "blacklist": list(blacklist)
+            }
+            with open(DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving data: {e}")
+
+# ==================== أدوات مساعدة ====================
+async def delete_message_after_delay(message, delay: int = DELETE_AFTER):
     await asyncio.sleep(delay)
     try:
         await message.delete()
@@ -67,7 +85,7 @@ async def delete_message_after_delay(message, delay: int = 30):
 async def check_subscription(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        return member.status in ['member', 'administrator', 'creator']
+        return member.status in ("member", "administrator", "creator")
     except TelegramError:
         return False
 
@@ -85,16 +103,21 @@ def get_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+def make_signature(video) -> str:
+    return f"{video.duration}_{video.file_size}"
+
+# ==================== الأوامر الأساسية ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
-    if user_id in BLACK_LIST:
-        await update.message.reply_text("🚫 **عذراً، تم حظرك من استخدام هذا البوت.**")
+
+    if user_id in blacklist:
+        await update.message.reply_text("🚫 **عذراً، تم حظرك من استخدام هذا البوت.**", parse_mode="Markdown")
         return
 
     if not await check_subscription(user_id, context):
         await update.message.reply_text(
-            f"⚠️ **عذراً! يجب عليك الاشتراك في القناة لاستخدام البوت.**\n\nاشترك ثم اضغط على زر التحقق:",
+            "⚠️ **عذراً! يجب عليك الاشتراك في القناة لاستخدام البوت.**\n\n"
+            "اشترك ثم اضغط على زر التحقق:",
             reply_markup=get_sub_keyboard(),
             parse_mode="Markdown"
         )
@@ -102,7 +125,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "👋 **أهلاً بك في بوت تبادل المقاطع!**\n\n"
-        "أرسل مقطع فيديو الآن ليتم تبادله تلقائياً مع مقطع آخر من مستخدم مختلف.\n"
+        "أرسل مقطع فيديو الآن ليتم تبادله تلقائياً مع مقطع آخر.\n"
         "⚠️ يمنع إرسال المقاطع المكررة أو إعادة إرسال المقاطع المستلمة من البوت.",
         reply_markup=get_main_keyboard(),
         parse_mode="Markdown"
@@ -112,7 +135,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.from_user.id in BLACK_LIST:
+    if query.from_user.id in blacklist:
         return
 
     if query.data == "check_sub":
@@ -125,8 +148,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("❌ ما زلت غير مشترك في القناة!", show_alert=True)
 
-# --- 3. أوامر الأدمن والحذف ---
-
+# ==================== أوامر الأدمن ====================
 async def execute_delete(update: Update):
     reply_msg = update.message.reply_to_message
     if not reply_msg or not reply_msg.video:
@@ -134,19 +156,21 @@ async def execute_delete(update: Update):
         return
 
     file_id = reply_msg.video.file_id
-    sig = f"{reply_msg.video.duration}_{reply_msg.video.file_size}"
+    sig = make_signature(reply_msg.video)
 
     removed = False
-    while file_id in video_database:
-        video_database.remove(file_id)
+    if file_id in videos:
+        del videos[file_id]
         removed = True
-    if sig in video_signatures:
-        video_signatures.remove(sig)
+
+    to_remove = [fid for fid, s in videos.items() if s == sig]
+    for fid in to_remove:
+        del videos[fid]
         removed = True
 
     if removed:
-        save_data()
-        await update.message.reply_text("✅ **تم حذف المقطع نهائياً ولن يظهر مجدداً لأحد!**")
+        await save_data()
+        await update.message.reply_text("✅ **تم حذف المقطع نهائياً ولن يظهر مجدداً لأحد!**", parse_mode="Markdown")
     else:
         await update.message.reply_text("ℹ️ المقطع غير موجود أو تم حذفه سابقاً.")
 
@@ -157,99 +181,133 @@ async def execute_ban(update: Update):
         return
 
     text_to_search = reply_msg.caption or reply_msg.text or ""
-    ids_found = re.findall(r'\b\d{7,12}\b', text_to_search)
-    
+    ids_found = re.findall(r"\b\d{7,12}\b", text_to_search)
+
     target_user_id = None
     for found_id in ids_found:
         if int(found_id) != ADMIN_ID:
             target_user_id = int(found_id)
             break
 
-    if target_user_id:
-        BLACK_LIST.add(target_user_id)
-        
-        if reply_msg.video:
-            file_id = reply_msg.video.file_id
-            sig = f"{reply_msg.video.duration}_{reply_msg.video.file_size}"
-            while file_id in video_database:
-                video_database.remove(file_id)
-            if sig in video_signatures:
-                video_signatures.remove(sig)
-            save_data()
+    if not target_user_id:
+        await update.message.reply_text("❌ لم يتم العثور على آيدي المستخدم في الرسالة.")
+        return
 
-        await update.message.reply_text(f"🚫 **تم حظر المستخدم `{target_user_id}` وحذف مقطعه نهائياً!**", parse_mode="Markdown")
-    else:
-        await update.message.reply_text("❌ لم يتم العثور على أيدي المستخدم في الرسالة.")
+    blacklist.add(target_user_id)
+
+    if reply_msg.video:
+        file_id = reply_msg.video.file_id
+        sig = make_signature(reply_msg.video)
+        if file_id in videos:
+            del videos[file_id]
+        to_remove = [fid for fid, s in videos.items() if s == sig]
+        for fid in to_remove:
+            del videos[fid]
+
+    await save_data()
+    await update.message.reply_text(
+        f"🚫 **تم حظر المستخدم `{target_user_id}` وحذف مقطعه نهائياً!**",
+        parse_mode="Markdown"
+    )
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text(
+        f"📊 **إحصائيات البوت:**\n\n"
+        f"• عدد المقاطع: `{len(videos)}`\n"
+        f"• عدد المحظورين: `{len(blacklist)}`",
+        parse_mode="Markdown"
+    )
 
 async def handle_admin_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_upload_mode, admin_added_count
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
+
+    if update.effective_user.id != ADMIN_ID:
         return
 
-    text = update.message.text.strip().lower() if update.message.text else ""
+    text = (update.message.text or "").strip().lower()
 
     if text in ["/add", "إضافة", "اضافة", "تعبئة"]:
         admin_upload_mode = True
         admin_added_count = 0
         await update.message.reply_text(
             "📥 **تم تفعيل وضع تعبئة المقاطع!**\n\n"
-            "قم بإرسال المقاطع الآن (فردية أو كـ ألبوم مجتمع).\n"
-            "عند الانتهاء، أرسل `/done` أو كلمة **تم** للإنهاء.",
+            "أرسل المقاطع الآن (فردية أو ألبوم).\n"
+            "عند الانتهاء أرسل `/done` أو كلمة **تم**.",
             parse_mode="Markdown"
         )
+
     elif text in ["/done", "تم", "إنهاء", "انهاء"] and admin_upload_mode:
         admin_upload_mode = False
-        save_data()
+        await save_data()
         await update.message.reply_text(
             f"✅ **تم حفظ المقاطع وإغلاق وضع التعبئة!**\n"
-            f"📊 المضافة: `{admin_added_count}` | الإجمالي الكلي: `{len(video_database)}`.",
+            f"📊 المضافة: `{admin_added_count}` | الإجمالي: `{len(videos)}`",
             parse_mode="Markdown"
         )
+
     elif text in ["/del", "/delete", "حذف", "مسح"]:
         await execute_delete(update)
+
     elif text in ["/ban", "حظر", "احظره"]:
         await execute_ban(update)
 
+    elif text in ["/stats", "إحصائيات", "احصائيات"]:
+        await stats_command(update, context)
+
+# ==================== معالجة الفيديوهات (محسّنة ضد التكرار) ====================
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_added_count
-    user = update.effective_user
-    
-    if user.id == ADMIN_ID and admin_upload_mode:
-        video = update.message.video
-        file_id = video.file_id
-        sig = f"{video.duration}_{video.file_size}"
 
-        if file_id not in video_database:
-            video_database.append(file_id)
-        video_signatures.add(sig)
-        admin_added_count += 1
-        save_data()
+    user = update.effective_user
+    video = update.message.video
+    file_id = video.file_id
+    sig = make_signature(video)
+
+    # ===== وضع تعبئة الأدمن =====
+    if user.id == ADMIN_ID and admin_upload_mode:
+        if file_id not in videos:
+            videos[file_id] = sig
+            admin_added_count += 1
+            await save_data()
         return
 
-    if user.id in BLACK_LIST:
-        await update.message.reply_text("🚫 **عذراً، تم حظرك من استخدام هذا البوت.**")
+    # ===== فحوصات المستخدم =====
+    if user.id in blacklist:
+        await update.message.reply_text(
+            "🚫 **عذراً، تم حظرك من استخدام هذا البوت.**",
+            parse_mode="Markdown"
+        )
         return
 
     if not await check_subscription(user.id, context):
         await update.message.reply_text(
-            f"⚠️ **عذراً! يجب عليك الاشتراك في القناة أولاً.**",
+            "⚠️ **عذراً! يجب عليك الاشتراك في القناة أولاً.**",
             reply_markup=get_sub_keyboard(),
             parse_mode="Markdown"
         )
         return
 
-    video = update.message.video
-    file_id = video.file_id
-    sig = f"{video.duration}_{video.file_size}"
+    # ===== Rate Limit =====
+    now = time.time()
+    if user.id in last_action and (now - last_action[user.id]) < RATE_LIMIT_SECONDS:
+        remaining = int(RATE_LIMIT_SECONDS - (now - last_action[user.id]))
+        await update.message.reply_text(f"⏳ انتظر **{remaining}** ثانية قبل إرسال مقطع آخر.")
+        return
+    last_action[user.id] = now
 
-    if file_id in video_database or sig in video_signatures:
+    # ===== منع تكرار المقاطع =====
+    if file_id in videos or sig in videos.values():
         await update.message.reply_text(
-            "⚠️ **هذا المقطع مستخدم سابقاً أو تم استلامه من البوت!**\nالرجاء إرسال مقطع جديد من إعدادك.",
-            reply_markup=get_main_keyboard()
+            "⚠️ **هذا المقطع مستخدم سابقاً أو تم استلامه من البوت!**\n"
+            "الرجاء إرسال مقطع جديد من إعدادك الخاص.",
+            reply_markup=get_main_keyboard(),
+            parse_mode="Markdown"
         )
         return
 
+    # ===== إشعار الأدمن =====
     admin_caption = (
         f"📥 **مقطع متبادل جديد:**\n\n"
         f"👤 **الاسم:** {user.full_name}\n"
@@ -266,61 +324,73 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Admin Notification Error: {e}")
 
-    if user.id not in user_history:
-        user_history[user.id] = set()
+    # ===== اختيار مقطع مختلف تماماً =====
+    seen = user_history[user.id]
 
-    seen_videos = user_history[user.id]
-    available_videos = [v for v in video_database if v != file_id and v not in seen_videos]
+    available = [
+        fid for fid, s in videos.items()
+        if fid != file_id and s != sig and fid not in seen
+    ]
 
-    if not available_videos:
-        available_videos = [v for v in video_database if v != file_id]
+    if not available:
+        available = [
+            fid for fid, s in videos.items()
+            if fid != file_id and s != sig
+        ]
 
-    if available_videos:
-        random_video = random.choice(available_videos)
+    if available:
+        random_video = random.choice(available)
+
         sent_message = await update.message.reply_video(
             video=random_video,
-            caption="⏳ **قم بتحويل المقطع أو حفظه فوراً، سينحذف بعد 30 ثانية!**",
-            reply_markup=get_main_keyboard()
+            caption=f"⏳ **قم بحفظ المقطع فوراً، سينحذف بعد {DELETE_AFTER} ثانية!**",
+            reply_markup=get_main_keyboard(),
+            parse_mode="Markdown"
         )
-        
+
         user_history[user.id].add(random_video)
+        if len(user_history[user.id]) > 80:
+            user_history[user.id] = set(list(user_history[user.id])[-50:])
 
-        video_database.append(file_id)
-        video_signatures.add(sig)
+        # إضافة مقطع المستخدم
+        videos[file_id] = sig
 
+        # تسجيل المقطع المرسل لمنع إعادة رفعه
         if sent_message.video:
-            out_sig = f"{sent_message.video.duration}_{sent_message.video.file_size}"
-            video_signatures.add(out_sig)
-            if sent_message.video.file_id not in video_database:
-                video_database.append(sent_message.video.file_id)
+            out_sig = make_signature(sent_message.video)
+            if sent_message.video.file_id not in videos:
+                videos[sent_message.video.file_id] = out_sig
 
-        save_data()
-        asyncio.create_task(delete_message_after_delay(sent_message, 30))
+        await save_data()
+        asyncio.create_task(delete_message_after_delay(sent_message, DELETE_AFTER))
+
     else:
-        video_database.append(file_id)
-        video_signatures.add(sig)
-        save_data()
-
+        videos[file_id] = sig
+        await save_data()
         await update.message.reply_text(
-            "تم استلام مقطعك بنجاح! أنت أول المشاركين، أرسل مقطعاً آخر أو انتظر مشاركة جديدة ليصلك مقطع.",
+            "تم استلام مقطعك بنجاح!\n"
+            "حالياً ما في مقاطع مختلفة متاحة، أرسل مقطعاً آخر أو انتظر مشاركة جديدة.",
             reply_markup=get_main_keyboard()
         )
 
-def main():
+# ==================== التشغيل ====================
+async def main():
     if not BOT_TOKEN:
         print("Error: BOT_TOKEN environment variable is not set.")
         return
 
+    await load_data()
+
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler(["add", "done", "del", "delete", "ban"], handle_admin_commands))
+    app.add_handler(CommandHandler(["add", "done", "del", "delete", "ban", "stats"], handle_admin_commands))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
-    app.add_handler(MessageHandler(filters.TEXT, handle_admin_commands))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_commands))
 
-    print("Starting bot polling...")
-    app.run_polling(drop_pending_updates=True)
+    print("Starting bot...")
+    await app.run_polling(drop_pending_updates=True)
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    asyncio.run(main())
